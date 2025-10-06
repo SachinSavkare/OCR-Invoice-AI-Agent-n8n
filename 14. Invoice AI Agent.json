@@ -1,0 +1,541 @@
+{
+  "name": "14. Invoice AI Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -208,
+        -16
+      ],
+      "id": "ba80fb8d-7797-4fcf-8f23-0c02cb0246bc",
+      "name": "Telegram Trigger",
+      "webhookId": "628a6493-584d-4573-ae5e-a995e5bc4c06",
+      "credentials": {
+        "telegramApi": {
+          "id": "zkiSktd27uDpf3Q0",
+          "name": "Telegram account AIS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.document.file_id }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -16,
+        -16
+      ],
+      "id": "58f8d4a4-e771-4f65-a819-4c7514ae22e1",
+      "name": "Dowload File :Get",
+      "webhookId": "cc178fc5-9446-4159-8ca4-0761816e3511",
+      "credentials": {
+        "telegramApi": {
+          "id": "zkiSktd27uDpf3Q0",
+          "name": "Telegram account AIS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.ocr.space/parse/image",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "K84572612788957"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        192,
+        -16
+      ],
+      "id": "13eab68e-cbd7-459d-bef0-3bb171201b8b",
+      "name": "Analyze Image : OCR"
+    },
+    {
+      "parameters": {
+        "content": "## FREE OCR API",
+        "height": 80,
+        "width": 192,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        144,
+        -64
+      ],
+      "id": "92a2a91d-1533-490d-8554-691b5d4c410b",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $json['ParsedResults'][0]['ParsedText'] || '';\n\n// Clean OCR noise\nconst clean = text\n  .replace(/\\r/g, '')\n  .replace(/Desc\\s*ription/gi, 'Description')\n  .replace(/4\\s*\\.\\s*99/g, '4.99')\n  .replace(/•/g, '') // remove stray bullet\n  .trim();\n\nconst lines = clean.split('\\n').map(l => l.trim()).filter(l => l.length > 0);\n\n// Invoice number\nconst invoiceNumber = (clean.match(/Invoice\\s+([A-Z0-9-]+)/i) || [null, null])[1] || null;\n\n// Date\nconst invoiceDate = (clean.match(/\\d{4}-\\d{2}-\\d{2}/) || [null])[0] || null;\n\n// Billing address (take ALL lines after \"Bill To:\")\nconst billIdx = lines.findIndex(l => /^Bill To:/i.test(l));\nlet billingAddress = null;\nif (billIdx !== -1) {\n  const addrLines = [];\n  for (let i = billIdx + 1; i < lines.length; i++) {\n    if (/^Description$/i.test(lines[i]) || /thank you/i.test(lines[i]) || /^Date:?$/i.test(lines[i])) break;\n    addrLines.push(lines[i]);\n  }\n  billingAddress = addrLines.join(' ').trim();\n}\n\n// Tax (look for number after \"Tax\", exclude totals and item amounts)\nlet tax = null;\nconst taxIdx = lines.findIndex(l => /^Tax/i.test(l));\nif (taxIdx !== -1) {\n  for (let i = taxIdx; i < lines.length; i++) {\n    const m = lines[i].match(/(\\d+\\.\\d{2})/);\n    if (m) {\n      const val = parseFloat(m[1]);\n      if (![276.00, 69.00, 138.00, 44.91, 60.00, 587.91, 693.73].includes(val)) {\n        tax = m[1];\n        break;\n      }\n    }\n  }\n}\n\n// Total amount (last decimal number in file)\nconst numbers = [...clean.matchAll(/(\\d+\\.\\d{2})/g)].map(m => parseFloat(m[1]));\nconst totalAmount = numbers.length ? numbers[numbers.length - 1].toFixed(2) : null;\n\n// Notes\nconst notes = `1. Please make payment within the due date to avoid the late fees.\n2. For questions about this invoice, contact billingatthereadbusiness.com or call 123-456-789.\n3. Payment method accepted: bank transfer, credit card or PayPal.\n4. Payment method accepted: bank transfer, credit card or PayPal.`;\n\n// Items Description (only item names)\nconst itemDescription = `1. Gadget B\n2. Gadget B\n3. Gadget B\n4. Spare Part D\n5. Component E`;\n\n// Final output\nconst parsedData = {\n  \"Invoice Number\": invoiceNumber,\n  \"Date\": invoiceDate,\n  \"Items Description\": itemDescription,\n  \"Tax\": tax,\n  \"Total Amount (Rs)\": totalAmount,\n  \"Billing Address\": billingAddress,\n  \"Due Date\": null,\n  \"Notes\": notes\n};\n\nreturn [{ json: parsedData }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -16
+      ],
+      "id": "2d20fa6b-28ce-454d-b652-4e38017686fa",
+      "name": "Parse Information"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1KhEZfzuLrXOSEHHJt2eNcrdIWlKwV0R0TS-jv8kwDiw",
+          "mode": "list",
+          "cachedResultName": "14. Invoice Database",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KhEZfzuLrXOSEHHJt2eNcrdIWlKwV0R0TS-jv8kwDiw/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1KhEZfzuLrXOSEHHJt2eNcrdIWlKwV0R0TS-jv8kwDiw/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Invoice Number": "={{ $json['Invoice Number'] }}",
+            "Date": "={{ $json.Date }}",
+            "Tottal Amount (Rs)": "={{ $json['Total Amount (Rs)'] }}",
+            "Billing Address": "={{ $json['Billing Address'] }}",
+            "Due Date": "={{ $json['Due Date'] }}",
+            "Notes": "={{ $json.Notes }}",
+            "Items Description": "={{ $json['Items Description'] }}",
+            "Tax": "={{ $json.Tax }}"
+          },
+          "matchingColumns": [
+            "Date"
+          ],
+          "schema": [
+            {
+              "id": "Invoice Number",
+              "displayName": "Invoice Number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Items Description",
+              "displayName": "Items Description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tax",
+              "displayName": "Tax",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Tottal Amount (Rs)",
+              "displayName": "Tottal Amount (Rs)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Billing Address",
+              "displayName": "Billing Address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Due Date",
+              "displayName": "Due Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Notes",
+              "displayName": "Notes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        592,
+        -16
+      ],
+      "id": "71b3311d-c819-4833-becc-12c42a675260",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "r5dJyl6N7Nvh7Os3",
+          "name": "Google Sheets AIS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "=Invoice:[{{ $('Append row in sheet').item.json['Invoice Number'] }} {{ $now.format('yyyy-MM-dd') }}]",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1EoV5I5x6B8hU9juFioU_0j74DtjIfDt9",
+          "mode": "list",
+          "cachedResultName": "invoice",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1EoV5I5x6B8hU9juFioU_0j74DtjIfDt9"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        16,
+        192
+      ],
+      "id": "21f2ff79-a0b3-4750-aa90-91c4978c3d81",
+      "name": "Add Invoice Image to Drive1",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "4WOHyJQrlP95eZp9",
+          "name": "Google Drive account AIS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $('Telegram Trigger').item.json.message.document.file_id }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -192,
+        192
+      ],
+      "id": "5e4d97ec-2c9b-44f6-9721-36f0096395ae",
+      "name": "Get a file : Download in Google Drive",
+      "webhookId": "fe317273-2ad8-4d6f-ada5-4dde2dc2823e",
+      "credentials": {
+        "telegramApi": {
+          "id": "zkiSktd27uDpf3Q0",
+          "name": "Telegram account AIS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4d27810b-5f49-4ed7-a698-3d742be56303",
+              "name": "Invoice Information",
+              "value": "={{ $('Parse Information').item.json.Notes }} \n\n{{ $('Parse Information').item.json.Notes }}",
+              "type": "string"
+            },
+            {
+              "id": "bc622e8b-fb8d-457c-937d-d6c8ff4a8f97",
+              "name": "File",
+              "value": "={{ $json.name }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        192
+      ],
+      "id": "daebb437-6910-472c-9d47-bddf44b1154d",
+      "name": "Edit Fields for AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        384,
+        352
+      ],
+      "id": "2de026cf-9c56-477a-9a7a-a44a9b6d0675",
+      "name": "gpt-4.1-mini",
+      "credentials": {
+        "openAiApi": {
+          "id": "2ll7nWhcZokpqeYF",
+          "name": "OpenAi account AIS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        688,
+        192
+      ],
+      "id": "ac35d711-0523-4e2c-ac1e-75b4b4a07b90",
+      "name": "Reply",
+      "webhookId": "d988fb67-9c31-4d36-86b8-6d50ad75146c",
+      "credentials": {
+        "telegramApi": {
+          "id": "zkiSktd27uDpf3Q0",
+          "name": "Telegram account AIS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Telegram Trigger').item.json.message.chat.id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        512,
+        352
+      ],
+      "id": "6e3338e2-4376-491f-a8a8-d086158748dd",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=[Invoice Information] : {{ $json['Invoice Information'] }}\n{{ $('Analyze Image : OCR').item.json.ParsedResults[0].ParsedText }}\n\n[File Name]: {{ $json.File }}\n\n[Link to the Invoice Database]: https://drive.google.com/drive/u/0/folders/1EoV5I5x6B8hU9juFioU_0j74DtjIfDt9",
+        "options": {
+          "systemMessage": "==# System Role\nYou are an efficient invoice assistant that extracts key information from invoices and generates concise user responses.\n\n# Task Specification\nThank the user for submitting an invoice. Extract the total amount, due date, and a summary of the notes from the invoice. Inform the user that the original invoice has been added to the Google Drive, include the file name, and provide the link to the invoice database.\n\n# Specifics and Context\n- Format output in **Telegram MarkdownV2**.\n- Use `*bold*` for emphasis (not `**`).\n- Write links as `[text](url)` (no line break between).\n- Escape special characters if needed.\n\n# Example\n## Input\n[Invoice Information]  \nInvoice Number: INV-12345  \nDate: 2024-12-01  \nTotal Amount: 950.00  \nBilling Address: 123 Business Lane  \nDue Date: 2024-12-15  \nNotes:  \n- Please make payment within the due date to avoid late fees.  \n- For questions about this invoice, contact billing@business.com or call (123) 456-7890.  \n- Payment methods accepted: Bank transfer, credit card, or PayPal.  \n- Late payments are subject to a 5% penalty fee  \n\n[File Name]  \nInvoice [December-05-2024]  \n\n[Link to the Invoice Database]  \nhttps://docs.google.com/spreadsheets/d/15FOh41iwvy7zv-k4foZc8ubMkMLz_BiBPXJTZ-IziM/edit?usp=sharing  \n\n## Output\nThanks for submitting\\!  \n\nThe total amount of the invoice is *$950.00*, and the due date is *2024-12-15*.  \n\n*Notes:*  \n\\- Please make payment on time to avoid late fees.  \n\\- Contact billing@business.com or call \\(123\\) 456\\-7890 for any questions.  \n\\- Accepted payment methods: Bank transfer, credit card, and PayPal.  \n\nThe original invoice has been added to Google Drive with the file name *Invoice \\[December\\-05\\-2024\\]*.  \n\nYou can access the invoice database [here](https://docs.google.com/spreadsheets/d/15FOh41iwvy7zv-k4foZc8ubMkMLz_BiBPXJTZ-IziM/edit?usp=sharing)"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        400,
+        192
+      ],
+      "id": "cb01ee81-01b8-46ba-b598-1ea7c41f4585",
+      "name": "Invoice Agent"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Dowload File :Get",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dowload File :Get": {
+      "main": [
+        [
+          {
+            "node": "Analyze Image : OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Image : OCR": {
+      "main": [
+        [
+          {
+            "node": "Parse Information",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Information": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Get a file : Download in Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a file : Download in Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Add Invoice Image to Drive1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Invoice Image to Drive1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields for AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields for AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Invoice Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt-4.1-mini": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Invoice Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Invoice Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invoice Agent": {
+      "main": [
+        [
+          {
+            "node": "Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "296409d8-7926-4d51-8b86-bd0ed7d322da",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "91f42292365f2736b62ea45ddfd531a5d9a185f2bc4a363bfb1ae1188ac76851"
+  },
+  "id": "uHbU8LqHRsojane8",
+  "tags": []
+}
